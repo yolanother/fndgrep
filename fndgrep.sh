@@ -5,74 +5,150 @@ if [ -z "$FNDGREP_COLOR" ]; then
 fi
 
 function fndgrep {
-    if [ -d "$1" ]; then
-        path="$1"
-        shift
-    else
-        path="./"
+    extension=""
+    pattern=""
+    directory="./"
+    cores="-P0"
+
+    if [ "`uname`" == "Darwin" ]; then
+        cores="-P4"
     fi
 
-    if [ -z "$1" ] || [ -z "$2" ]; then
-        echo "Usage: fndgrep (directory) file_pattern expression (grep params ...) "
-    else
-        pattern="$1"
-        expression="$2"
-        shift
-        shift
+    echo "$@"
+
+    # TODO find a better way that isn't order dependent for opts
+    consumedops=0
+    while getopts ":e:d:p:h" opt; do
+        echo "opt: $opt"
+        case $opt in
+            p)
+                consumedops=$((consumedops+2))
+                pattern="$OPTARG"
+                ;;
+            e)
+                consumedops=$((consumedops+2))
+                extension="$OPTARG"
+                ;;
+            d)
+                consumedops=$((consumedops+2))
+                directory="$OPTARG"
+                ;;
+            h)
+                echo "Usage: fndgrep [options] 'search term'" >&2
+                echo "  -e: Search by extension"
+                echo "  -p: Search by file pattern"
+                echo "  -d: Directory to search"
+                return
+            ;;
+        esac
+    done
+    shift $((consumedops))
+
+    echo "$# $@"
+
+    if [ -n "$1" ]; then
         fndgrepcolor=""
         if [ "true" == "$FNDGREP_COLOR" ]; then
             fndgrepcolor="--color=always"
         fi
-        if [ " " == "$pattern" ]; then
-            find "$path" -type f -print0 | xargs -0 -P0 grep $fndgrepcolor $FNDGREP_DEFOPTS $@ "$expression"
+
+        # Really ugly way of handling this and doesn't support multiple patterns, but it will do for now
+        if [ -n "$pattern" ] && [ -n "$extension" ]; then
+            echo "Please use either a pattern or an extension not both at the same time." >&2
+        elif [ -n "$pattern" ]; then
+            find "$directory" -type f -iname "$pattern" -print0 | xargs -0 $cores grep $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS $@
+        elif [ -n "$extension" ]; then
+            find "$directory" -type f -iname "*.$extension" -print0 | xargs -0 $cores grep $fndgrepcolor $FNDGREP_DEFOPTS $@
         else
-            find "$path" -type f -iname "$pattern" -print0 | xargs -0 -P0 grep $fndgrepcolor $FNDGREP_DEFOPTS $@ "$expression"
+            find "$directory" -type f -print0 | xargs -0 $cores grep $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS $@
         fi
-    fi
-}
-
-function efndgrep {
-    ext="$1"
-    shift
-    if [ -d "$1" ]; then
-        path="$1"
-        shift
     else
-        path="./"
+        fndgrep -h
     fi
-    fndgrep "$path" "$ext" "$@"
 }
 
-function fndagrep {
-    efndgrep " " "$@"
+function fndgrepr {
+    extension=""
+    pattern=""
+    directory=""
+    grepSwitches=""
+
+    while getopts ":e:d:p:g:" opt; do
+        case $opt in
+            p)
+                pattern="-p"
+                patternArg="$OPTARG"
+                ;;
+            e)
+                extension="-e"
+                extensionArg="$OPTARG"
+                ;;
+            d)
+                directory="$OPTARG"
+                ;;
+            g)
+                grepSwitches="$OPTARG"
+                ;;
+            \?)
+                fndgrep -h
+                return
+            ;;
+        esac
+    done
+    shift $((OPTIND-1))
+
+    while [ $# != 0 ]; do
+        if [ $# -gt 1 ]; then
+            fndgrep $extension $pattern $directory -l $1 | while read file; do
+                echo "Found Match in $file"
+            done
+        else
+            if [ -n "$grepSwitches" ]; then
+                grepSwitches = "-g '$grepSwitches'"
+            fi
+            fndgrep -d "$directory" $extension $extensionArg $pattern $patternArg $grepSwitches $1
+        fi
+        shift
+    done
 }
 
 function fndjgrep {
-    efndgrep "*.java" "$@"
+    efndgrep -e "java" "$@"
 }
 
 function fndjsgrep {
-    efndgrep "*.js" "$@"
+    efndgrep -e "js" "$@"
 }
 
 function fndxgrep {
-    efndgrep "*.xml" "$@"
+    efndgrep -e "xml" "$@"
 }
 
 function fndcgrep {
-    efndgrep "*.c" "$@"
+    efndgrep -e "c" "$@"
 }
 
 function fndcppgrep {
-    efndgrep "*.cpp" "$@"
+    efndgrep -e "cpp" "$@"
 }
 
 function fndhgrep {
-    efndgrep "*.h" "$@"
+    efndgrep -e "h" "$@"
 }
 
 function fndmkgrep {
-    efndgrep "*.mk" "$@"
+    efndgrep -e "mk" "$@"
 }
 
+if [[ "bash" != "$0" ]]; then
+    fn="fndgrep"
+    extension="*"
+    path="./"
 
+    if [ "$1" == "r" ]; then
+        shift
+        fndgrepr "$@"
+    else
+        fndgrep "$@"
+    fi
+fi
