@@ -9,42 +9,46 @@ function fndgrep {
     pattern=""
     directory="./"
     cores="-P0"
+    recursive=false
 
     if [ "`uname`" == "Darwin" ]; then
         cores="-P4"
     fi
 
-    echo "$@"
+    local params=""
 
-    # TODO find a better way that isn't order dependent for opts
-    consumedops=0
-    while getopts ":e:d:p:h" opt; do
-        echo "opt: $opt"
-        case $opt in
+    local OPTIND opt
+    while getopts ":e:d:p:hr" opt; do
+        case "$opt" in
             p)
-                consumedops=$((consumedops+2))
-                pattern="$OPTARG"
+                if [ -n "$params" ]; then
+                    params="$params -o"
+                fi
+                params="$params -iname '*$OPTARG*'"
                 ;;
             e)
-                consumedops=$((consumedops+2))
-                extension="$OPTARG"
+                if [ -n "$params" ]; then
+                    params="$params -o"
+                fi
+                params="$params -type f -iname '*.$OPTARG'"
                 ;;
             d)
-                consumedops=$((consumedops+2))
                 directory="$OPTARG"
+                ;;
+            r)
+                recursive=true
                 ;;
             h)
                 echo "Usage: fndgrep [options] 'search term'" >&2
                 echo "  -e: Search by extension"
                 echo "  -p: Search by file pattern"
                 echo "  -d: Directory to search"
+                echo "  -r: Each query is run on the previous"
                 return
             ;;
         esac
     done
-    shift $((consumedops))
-
-    echo "$# $@"
+    shift $((OPTIND-1))
 
     if [ -n "$1" ]; then
         fndgrepcolor=""
@@ -52,64 +56,38 @@ function fndgrep {
             fndgrepcolor="--color=always"
         fi
 
-        # Really ugly way of handling this and doesn't support multiple patterns, but it will do for now
-        if [ -n "$pattern" ] && [ -n "$extension" ]; then
-            echo "Please use either a pattern or an extension not both at the same time." >&2
-        elif [ -n "$pattern" ]; then
-            find "$directory" -type f -iname "$pattern" -print0 | xargs -0 $cores grep $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS $@
-        elif [ -n "$extension" ]; then
-            find "$directory" -type f -iname "*.$extension" -print0 | xargs -0 $cores grep $fndgrepcolor $FNDGREP_DEFOPTS $@
+        local ignore=""
+        if [ -f "$HOME/.fndgrepignore" ]; then
+            while read file; do
+                ignore="$ignore -name $file -prune -o"
+            done < "$HOME/.fndgrepignore"
+        fi
+
+        if [ -n "$params" ]; then
+            findcmd="find \"$directory\" $ignore -type f \( $params \) -print0"
         else
-            find "$directory" -type f -print0 | xargs -0 $cores grep $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS $@
+            findcmd="find \"$directory\" $ignore -type f $params -print0"
+        fi
+
+        if $recursive; then
+            grepcmd=""
+            firstgrep="$1"
+            shift
+            while [ $# -gt 0 ]; do
+                if [ -n "$grepcmd" ]; then
+                    grepcmd="$grepcmd | "
+                fi
+                grepcmd="grep $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS \"$1\""
+                shift
+            done
+
+            eval $findcmd | xargs -0 $cores grep $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS "$firstgrep" | eval $grepcmd
+        else
+            eval $findcmd | xargs -0 $cores grep $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS $@
         fi
     else
         fndgrep -h
     fi
-}
-
-function fndgrepr {
-    extension=""
-    pattern=""
-    directory=""
-    grepSwitches=""
-
-    while getopts ":e:d:p:g:" opt; do
-        case $opt in
-            p)
-                pattern="-p"
-                patternArg="$OPTARG"
-                ;;
-            e)
-                extension="-e"
-                extensionArg="$OPTARG"
-                ;;
-            d)
-                directory="$OPTARG"
-                ;;
-            g)
-                grepSwitches="$OPTARG"
-                ;;
-            \?)
-                fndgrep -h
-                return
-            ;;
-        esac
-    done
-    shift $((OPTIND-1))
-
-    while [ $# != 0 ]; do
-        if [ $# -gt 1 ]; then
-            fndgrep $extension $pattern $directory -l $1 | while read file; do
-                echo "Found Match in $file"
-            done
-        else
-            if [ -n "$grepSwitches" ]; then
-                grepSwitches = "-g '$grepSwitches'"
-            fi
-            fndgrep -d "$directory" $extension $extensionArg $pattern $patternArg $grepSwitches $1
-        fi
-        shift
-    done
 }
 
 function fndjgrep {
@@ -140,7 +118,7 @@ function fndmkgrep {
     efndgrep -e "mk" "$@"
 }
 
-if [[ "bash" != "$0" ]]; then
+if [[ "bash" != "$0" ]] && [[ "-bash" != "$0" ]]; then
     fn="fndgrep"
     extension="*"
     path="./"
