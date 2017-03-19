@@ -7,7 +7,7 @@ fi
 function fndgrep {
     extension=""
     pattern=""
-    directory="./"
+    directory="."
     cores="-P0"
     recursive=false
 
@@ -16,9 +16,10 @@ function fndgrep {
     fi
 
     local params=""
+    local sedexpr=""
 
     local OPTIND opt
-    while getopts ":e:d:p:hr" opt; do
+    while getopts ":e:d:p:s:hr" opt; do
         case "$opt" in
             p)
                 if [ -n "$params" ]; then
@@ -32,6 +33,9 @@ function fndgrep {
                 fi
                 params="$params -type f -iname '*.$OPTARG'"
                 ;;
+            s)
+                sedexpr="$OPTARG"
+                ;;
             d)
                 directory="$OPTARG"
                 ;;
@@ -44,13 +48,14 @@ function fndgrep {
                 echo "  -p: Search by file pattern"
                 echo "  -d: Directory to search"
                 echo "  -r: Each query is run on the previous"
+                echo "  -s: Execute sed on matches"
                 return
             ;;
         esac
     done
     shift $((OPTIND-1))
 
-    if [ -n "$1" ]; then
+    if [ -n "$1" ] || [ -n "$sedexpr" ]; then
         fndgrepcolor=""
         if [ "true" == "$FNDGREP_COLOR" ]; then
             fndgrepcolor="--color=always"
@@ -83,7 +88,13 @@ function fndgrep {
 
             eval $findcmd | xargs -0 $cores grep $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS "$firstgrep" | eval $grepcmd
         else
-            eval $findcmd | xargs -0 $cores grep $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS $@
+
+            if [ -n "$sedexpr" ]; then
+                eval $findcmd | xargs -0 $cores grep -l $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS $@ | \
+                        xargs $cores -I {} sed -i '' "s/${1//\//\/}/${sedexpr//\//\/}/g" {}
+            else
+                eval $findcmd | xargs -0 $cores grep $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS $@
+            fi
         fi
     else
         fndgrep -h
