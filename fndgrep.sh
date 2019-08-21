@@ -90,10 +90,10 @@ function fndgrep {
         else
 
             if [ -n "$sedexpr" ]; then
-                eval $findcmd | xargs -0 $cores grep -l $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS $@ | \
+                eval $findcmd | xargs -0 $cores grep -l $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS "$@" | \
                         xargs $cores -I {} sed -i '' "s/${1//\//\/}/${sedexpr//\//\/}/g" {}
             else
-                eval $findcmd | xargs -0 $cores grep $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS $@
+                eval $findcmd | xargs -0 $cores grep $grepSwitches $fndgrepcolor $FNDGREP_DEFOPTS "$@"
             fi
         fi
     else
